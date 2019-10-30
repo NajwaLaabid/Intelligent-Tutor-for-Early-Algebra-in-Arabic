@@ -1,0 +1,431 @@
+;;;;;;;;;;;;;; functions
+
+(deffunction f-get-side-string (?list-var)
+
+	(bind ?side-str "")
+
+	(if (= 0 (length$ ?list-var) )
+		then (return ?side-str)
+	)
+	
+	(bind ?var1 (nth$ 1 ?list-var) )
+	(bind ?list-var (delete$ ?list-var  1 1) )
+	(bind ?str1 (f-get-var-str ?var1) )
+	(bind ?side-str (str-cat ?side-str ?str1) )
+
+	(foreach ?var ?list-var
+		(bind ?side-str (str-cat ?side-str + (f-get-var-str ?var) ) )
+	
+	)
+
+	(return ?side-str)
+)
+
+(deffunction f-get-next-field (?pb)
+
+  (bind ?interface-elts (fact-slot-value ?pb interface-elements) )
+
+	(bind ?next-field (nth$ 1 ?interface-elts) )
+	(bind ?interface-elts (delete$ ?interface-elts 1 1) )
+	(modify ?pb (interface-elements ?interface-elts) )
+
+	(return ?next-field)
+)
+
+(deffunction f-get-var-str (?var)
+	(bind ?str "")
+	(bind ?coef (fact-slot-value ?var coef) )
+	(bind ?char (fact-slot-value ?var char) )
+	(bind ?op (fact-slot-value ?var op) )
+	(bind ?offset (fact-slot-value ?var offset) )
+
+	(if (= ?coef 1)
+	 then (bind ?str (str-cat ?str ?char) )
+	)
+
+	(if (> ?coef 1)
+	 then (bind ?str (str-cat ?str ?coef ?char) )
+	)
+
+	(if (<> ?offset 0)
+	 then
+	 (if (<> ?coef 0)
+	  then (bind ?str (str-cat ?str ?op ?offset) )
+	  else 
+	  (bind ?str (str-cat ?str ?offset) )
+	 ) 
+	)
+	 
+	(return ?str)
+)
+
+(deffunction f-get-offset-relative-value (?op ?offset)
+	(if (eq ?op +)
+		then (return ?offset )
+	)
+
+	(if (eq ?op -)
+		then (return (* -1 ?offset) )
+	)
+)
+
+(deffunction f-create-side-var (?list-var ?new-id)
+	(bind ?var1 (nth$ 1 ?list-var) )
+	(bind ?char (fact-slot-value ?var1 char) )
+	(bind ?coef-total 0 )
+	(bind ?offset-total 0 )
+
+	;; get offset
+	(foreach ?v ?list-var
+		(bind ?coef (fact-slot-value ?v coef) )
+		(bind ?offset (fact-slot-value ?v offset) )
+		(bind ?op (fact-slot-value ?v op) )
+
+		(if (<> 0 ?coef) 
+		 then (++ ?coef-total)
+		)
+
+		(bind ?offset-total (+ ?offset-total (f-get-offset-relative-value ?op ?offset) ) )
+	)
+	
+	(if (>= ?offset-total 0) 
+		then (bind ?op-total +)
+	 else
+	 	(bind ?op-total -)
+	)
+
+	(bind ?var5 (assert(MAIN::var (id ?new-id) (coef ?coef-total) (char ?char) (op ?op-total) (offset ?offset-total) ) ) )
+)
+
+(deffunction f-get-opposite-op (?op)
+	(if (eq ?op +)
+		then (return -)
+	)
+
+	(if (eq ?op -)
+		then (return +)
+	)
+)
+
+(deffunction f-simplify (?var-LHS ?var-RHS) 
+
+	(bind ?coef-LHS (fact-slot-value ?var-LHS coef) )
+	(bind ?offset-LHS (fact-slot-value ?var-LHS offset) )
+	(bind ?op-LHS (fact-slot-value ?var-LHS op) )
+	(bind ?op-LHS-opp (f-get-opposite-op ?op-LHS))
+	(bind ?relative-offset-LHS (f-get-offset-relative-value ?op-LHS-opp ?offset-LHS) )
+
+	(printout t crlf "=============== offset-lhs: " ?relative-offset-LHS crlf )
+
+	(bind ?coef-RHS (fact-slot-value ?var-RHS coef) )
+	(bind ?offset-RHS (fact-slot-value ?var-RHS offset) )
+	(bind ?op-RHS (fact-slot-value ?var-RHS op) )
+	(bind ?relative-offset-RHS (f-get-offset-relative-value ?op-RHS ?offset-RHS) )
+
+	(if (and (= 1 ?coef-LHS) (= 0 ?offset-LHS) )
+	 then 
+	 (return 0)
+	)
+
+	(if (<> 0 ?offset-LHS) 
+	 then 
+	 (modify ?var-RHS (offset 27) )
+	 (modify ?var-LHS (offset 0) )
+	 (return 1)
+	)
+
+	(if (and (<> 0 ?coef-LHS) (<> 1 ?coef-LHS) )
+	 then 
+	 (modify ?var-RHS (offset (div ?offset-RHS ?coef-LHS) ) )
+	 (modify ?var-LHS (coef (div ?coef-LHS ?coef-LHS) ) )
+	 (return 1)
+	)
+)
+
+;;;;;;;;;;;;;; rules
+
+;; rule to get each var because their values are not interchangeable (var1 has a specific value x)
+
+(defrule r-get-var1
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-get-init-vars)
+	?var <- (var (id 1) )
+
+	=>
+
+	(f-get-next-field ?pb) ; update the list of fields
+	(bind ?str (f-get-var-str ?var) )
+	(predict-observable-action s1-v1-value UpdateTextField ?str)
+	(construct-message
+        "[The second variable is the integer right after the first variable. How can you express this mathematically?]"
+    )
+
+)
+
+(defrule r-get-var2
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-get-init-vars)
+	?var <- (var (id 2) )
+
+	=>
+
+	(f-get-next-field ?pb) ; update the list of fields
+	(bind ?str (f-get-var-str ?var) )
+	(predict-observable-action s1-v2-value UpdateTextField ?str)
+	(construct-message
+        "[The second variable is the integer right after the first variable. How can you express this mathematically?]"
+    )
+)
+
+(defrule r-get-var3
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-get-init-vars)
+	?var <- (var (id 3) )
+
+	=>
+
+	(f-get-next-field ?pb) ; update the list of fields
+	(bind ?str (f-get-var-str ?var) )
+	(predict-observable-action s1-v3-value UpdateTextField ?str)
+	(bind ?sub (assert(MAIN::g-create-equation) ) )
+	(modify ?pb (subgoals ?sub) )
+	(construct-message
+        "[The third variable is the second integer after the first variable. How can you express this mathematically?]"
+    )
+)
+
+(defrule r-create-equation
+
+	?pb <- (problem (equation ?LHS ?RHS) (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-create-equation)
+	?var1 <- (var (id 1) )
+	?var2 <- (var (id 2) )
+	?var3 <- (var (id 3) )
+	?var4 <- (var (id 4) )
+	?LHS <- (side (type LHS) )
+	?RHS <- (side (type RHS) )
+
+	=>
+
+	(retract ?subgoal)
+	(bind ?LHS-str (f-get-side-string (create$ ?var1 ?var2 ?var3) ) )
+	(bind ?RHS-str (f-get-side-string (create$ ?var4) ) )
+
+	(f-create-side-var (create$ ?var1 ?var2 ?var3) 5) ;; 5 is the id of the new var
+	(f-create-side-var (create$ ?var4) 6) ;; 6 is the id of the new var
+
+	(modify ?LHS (value ?LHS-str) )
+	(modify ?RHS (value ?RHS-str) )
+
+	(bind ?sub (assert(MAIN::g-check-side) ) )
+	(modify ?pb (subgoals ?sub) )
+)
+
+(defrule r-check-LHS
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-check-side)
+	?LHS <- (side (type LHS) (value ?v) )
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) ) ; update the list of fields
+	(predict-observable-action ?next-f UpdateTextField ?v)
+)
+
+(defrule r-check-RHS
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-check-side)
+	?RHS <- (side (type RHS) (value ?v) )
+
+	=>
+
+	(retract ?subgoal)
+	(bind ?next-f (f-get-next-field ?pb) ) ; update the list of fields
+	(predict-observable-action ?next-f UpdateTextField ?v)
+
+	(bind ?sub (assert(MAIN::g-simplify-pb) ) )
+	(modify ?pb (subgoals ?sub) )
+)
+
+(defrule r-check-simplified-LHS
+	?pb <- (problem (subgoals $? ?sub $?) )
+	?sub <- (g-simplify-pb)
+	?var-LHS <- (var (id 5) ) 
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) )
+	(bind ?str (f-get-var-str ?var-LHS) )
+	(predict-observable-action ?next-f UpdateTextField ?str)
+)
+
+(defrule r-check-simplified-RHS
+	?pb <- (problem (subgoals $? ?sub $?) )
+	?sub <- (g-simplify-pb)
+	?var-RHS <- (var (id 6) ) 
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) )
+	(bind ?str (f-get-var-str ?var-RHS) )
+	(predict-observable-action ?next-f UpdateTextField ?str)
+	(retract ?sub)
+	(bind ?sub (assert(MAIN::g-solve-eq) ) )
+	(modify ?pb (subgoals ?sub) )
+)
+
+(defrule r-solve-LHS
+	?pb <- (problem (subgoals $? ?sub $?) )
+	?sub <- (g-solve-eq)
+	?var-LHS <- (var (id 5) ) 
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) )
+	(bind ?str (f-get-var-str ?var-LHS) )
+	(predict-observable-action ?next-f UpdateTextField ?str)
+)
+
+(defrule r-solve-RHS
+	?pb <- (problem (subgoals $? ?sub $?) )
+	?sub <- (g-solve-eq)
+	?var-RHS <- (var (id 6) ) 
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) )
+	(bind ?str (f-get-var-str ?var-RHS) )
+	(predict-observable-action ?next-f UpdateTextField ?str)
+)
+
+(defrule r-solve-simplify
+	?pb <- (problem (subgoals $? ?sub $?) )
+	?sub <- (g-solve-eq)
+	?var-LHS <- (var (id 5) )
+	?var-RHS <- (var (id 6) )
+	?var1 <- (var (id 1) )
+	?var2 <- (var (id 2) )
+	?var3 <- (var (id 3) )
+
+	=>
+
+	(bind ?res (f-simplify ?var-LHS ?var-RHS) )
+	(if (= 0 ?res)
+		then
+		(retract ?sub)
+		(bind ?sub1 (assert(MAIN::g-back-to-pb) ) )
+		(modify ?pb (subgoals ?sub1) )
+		(modify ?var1 (final-value 9) )
+		(modify ?var2 (final-value 10) )
+		(modify ?var3 (final-value 11) )
+	)
+)
+
+(defrule r-final-var1
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-back-to-pb)
+	?var <- (var (id 1) (final-value ?v) )
+
+	=>
+
+	(f-get-next-field ?pb) ; update the list of fields
+	(predict-observable-action s4-v1-value UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+)
+
+(defrule r-final-var2
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-back-to-pb)
+	?var <- (var (id 2) (final-value ?v) )
+
+	=>
+
+	(f-get-next-field ?pb) ; update the list of fields
+	(predict-observable-action s4-v2-value UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+)
+
+(defrule r-final-var3
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-back-to-pb)
+	?var <- (var (id 3) (final-value ?v) )
+
+	=>
+
+	(f-get-next-field ?pb) ; update the list of fields
+	(predict-observable-action s4-v3-value UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+    (bind ?sub1 (assert(MAIN::g-finish) ) )
+    (modify ?pb (subgoals ?sub1) )
+)
+
+(defrule r-check-cond-var1
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-finish)
+	?var <- (var (id 1) (final-value ?v) )
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) ); update the list of fields
+	(predict-observable-action ?next-f UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+)
+
+(defrule r-check-cond-var2
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-finish)
+	?var <- (var (id 2) (final-value ?v) )
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) ); update the list of fields
+	(predict-observable-action ?next-f UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+)
+
+(defrule r-check-cond-var3
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-finish)
+	?var <- (var (id 3) (final-value ?v) )
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) ); update the list of fields
+	(predict-observable-action ?next-f UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+)
+
+(defrule r-check-cond-var4
+	?pb <- (problem (subgoals $? ?subgoal $?) )
+	?subgoal <- (g-finish)
+	?var <- (var (id 4) (offset ?v) )
+
+	=>
+
+	(bind ?next-f (f-get-next-field ?pb) ); update the list of fields
+	(predict-observable-action ?next-f UpdateTextField ?v)
+	(construct-message
+        "[x is the value of the first variable.]"
+    )
+)
+
+(defrule r-finish-done
+  ?pb <- (problem (subgoals $? ?sub $?) )
+  ?sub <- (g-finish)
+  
+  => 
+
+  (predict-observable-action done ButtonPressed -1)
+)

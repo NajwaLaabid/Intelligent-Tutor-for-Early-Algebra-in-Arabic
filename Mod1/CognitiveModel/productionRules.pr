@@ -1,0 +1,618 @@
+(require* wmeTypes from "wmeTypes.clp")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  This file contains Jess / CTAT production rules to solve and tutor
+;;  first-degree equations.
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; These are functions used by the equation resolution rules
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; auxiliary function to get all correct arrangements of terms in one side
+;; Input: ?done => contains indices in their final position in one permutation
+;;     ?permute => contains indices to be selected for permutation
+;; Output: ?result => final list containing all the permutations of given indices
+;; Example: ?new = (1 2 3) => ?result = (1 2 3 1 3 2 2 1 3 2 3 1 3 1 2 3 2 1)
+
+(deffunction permutation (?done ?permute)
+ 
+ ;; ?result => output list
+ (bind ?result (create$)) 
+
+ ;; base-case: only one possible perm for a single elt => append to end of list
+ (if (= (length$ ?permute) 0) then (return)) 
+ (if (= (length$ ?permute) 1) then (return (create$ ?done ?permute)) 
+
+ ;; append every possible candidate to ?done and repeat process for unselected candidates
+ else (foreach ?e ?permute
+   (bind ?done2 (create$ ?done ?e))
+   (bind ?result (create$ ?result (permutation ?done2 (complement$ ?done2 ?permute))))
+  )
+ (return ?result))
+)
+
+;; function to construct regex of possible correct student input
+(deffunction getRegex (?side)
+
+ (bind ?terms (fact-slot-value ?side terms) )
+
+ (bind ?operations (fact-slot-value ?side operations) )
+
+ (bind ?nb-terms (length$ ?terms)) ;; get nb of terms
+
+ ;; generate list of indices of terms
+ (bind ?i 2)
+ (bind ?list-idx (create$ 1)) ;; there is at least one term in one side
+
+ (while (<= ?i ?nb-terms)
+  (bind ?list-idx (create$ ?list-idx ?i))
+  (++ ?i)
+ )
+
+ ;; get all permutations of indices
+ (bind ?all-idx-perms (permutation (create$) ?list-idx))
+
+ ;; construct regex
+ (bind ?general-regex "") ;; final regex string
+ (bind ?permutation "") ;; holds a single permutation
+ (bind ?j 1) ;; index for looping
+
+ (while (<= ?j (length$ ?all-idx-perms))
+
+  (bind ?idx (nth$ ?j ?all-idx-perms))
+   (bind ?t (nth$ ?idx ?terms))
+   (bind ?o (nth$ ?idx ?operations))
+
+   ;; add escape character to + sign
+   (if (eq ?o +) then (bind ?o-str (str-cat [ \ ?o ])) else (bind ?o-str ?o))
+
+   ;; if first term and corresponding sign is +, omit it
+   (if (and (or (= (mod ?j ?nb-terms) 1) (= ?j 1)) (eq ?o +)) 
+    then (bind ?permutation (str-cat ?permutation ?t))
+    else (bind ?permutation (str-cat ?permutation ?o-str ?t)))
+
+   ;; if last term in first permutation append to general-regex
+   ;; and reset ?permutation
+   (if (= ?j ?nb-terms)  
+    then (bind ?general-regex (str-cat ?general-regex "(" ?permutation ")"))
+    (bind ?permutation ""))
+
+   ;; if last term in another permutation, change connecting elements of regex
+   (if (and (<> ?j ?nb-terms) (= (mod ?j ?nb-terms) 0)) 
+    then (bind ?general-regex (str-cat ?general-regex | "(" ?permutation ")"))
+    (bind ?permutation ""))
+
+   (++ ?j)
+ )
+
+ (return ?general-regex)
+)
+
+;; get name of the next field
+(deffunction f-get-next-field (?pb)
+
+  (bind ?interface-elts (fact-slot-value ?pb interface-elements) )
+
+	(bind ?next-field (nth$ 1 ?interface-elts) )
+	(bind ?interface-elts (delete$ ?interface-elts 1 1) )
+	(modify ?pb (interface-elements ?interface-elts) )
+
+	(return ?next-field)
+)
+
+;; get operation type based on symbol
+(deffunction f-get-operation-type (?symbol) 
+  (if (eq ?symbol +)
+   then (return Add) 
+   else (if (eq ?symbol -)
+         then (return Subtract)
+        )
+   else (if (eq ?symbol *)
+         then (return Multiply)
+        )
+   else (if (eq ?symbol /)
+         then (return Divide)
+        )
+  )
+
+  (return nil)
+)
+
+;; returns string value of term 
+(deffunction f-get-string-value (?t)
+  (bind ?type (fact-slot-value ?t type) )
+
+  (if (eq ?type Number)
+    then (return (str-cat "" (fact-slot-value ?t value-nb) ) )
+   else
+    (if (eq ?type Unknown)
+      then 
+      (if (= 1 (fact-slot-value ?t u-coef) ) 
+        then (return (str-cat (fact-slot-value ?t u-char) ) )
+      )
+      (return (str-cat (fact-slot-value ?t u-coef) (fact-slot-value ?t u-char) ) )
+    )
+  )
+)
+
+;; compute terms
+(deffunction f-compute-nb (?t1 ?t2)
+
+ (if (eq (fact-slot-value ?t1 type) Number)
+  then 
+  (bind ?v1 (fact-slot-value ?t1 value-nb) )
+  else 
+  (if (eq (fact-slot-value ?t1 type) Unknown)
+   then 
+   (bind ?v1 (fact-slot-value ?t1 u-coef) )
+  )
+ )
+
+ (if (eq (fact-slot-value ?t2 type) Number)
+  then 
+  (bind ?v2 (fact-slot-value ?t2 value-nb) )
+  else 
+  (if (eq (fact-slot-value ?t2 type) Unknown)
+   then 
+   (bind ?v2 (fact-slot-value ?t2 u-coef) )
+  )
+ )
+
+ (bind ?op1 (fact-slot-value ?t1 operation) )
+ (bind ?op2 (fact-slot-value ?t2 operation) )
+
+ (if (and (eq ?op1 +) (eq ?op2 +) )
+  then (return (+ ?v1 ?v2) )
+  else (if (and (eq ?op1 +) (eq ?op2 -) )
+   then (return (- ?v1 ?v2) ) )
+  else (if (and (eq ?op1 -) (eq ?op2 +) )
+   then (return (- ?v2 ?v1) ) )
+  else (if (and (eq ?op1 -) (eq ?op2 -) )
+   then (return (- 0 (+ ?v2 ?v1) ) ) )
+ )
+
+ (if (eq ?op1 /)
+  then 
+  (if (eq ?op2 -)
+   then (return (div (* -1 ?v2) ?v1) ) 
+  )
+  (return (div ?v2 ?v1) )
+ )
+
+ (if (eq ?op2 /)
+  then 
+  (if (eq ?op1 -)
+   then (return (div (* -1 ?v1) ?v2) ) 
+  )
+  (return (div ?v1 ?v2) )
+ )
+)
+
+(deffunction f-get-result-nb (?t1 ?t2 ?next-id)
+  
+ (bind ?result-nb (f-compute-nb ?t1 ?t2) )
+ (bind ?type (fact-slot-value ?t1 type) )
+
+ (if (< 0 ?result-nb)
+  then (bind ?op +)
+  else (bind ?op -)
+ )
+
+ (if (<> 0 ?result-nb) 
+  then 
+  (if (eq ?type Number)
+   then 
+   (bind ?res-t (duplicate ?t1 (id ?next-id) (value-nb (abs ?result-nb) ) (operation ?op) ) ) 
+  )
+  (if (eq ?type Unknown)
+   then 
+   (bind ?res-t (duplicate ?t1 (id ?next-id) (u-coef (abs ?result-nb) ) (operation ?op) ) ) 
+  )
+  
+  (return ?res-t)
+ )
+
+ (return nil)
+)
+
+(deffunction f-get-opposite-operation (?op)
+  (if (eq ?op +)
+    then (return -)
+    else 
+    (if (eq ?op -)
+      then (return +)
+    )
+    else 
+    (if (eq ?op *)
+      then (return /)
+    )
+    else 
+    (if (eq ?op /)
+      then (return *)
+    )
+  )
+)
+
+(deffunction f-update-side (?result-t ?t1 ?t2 ?s)
+
+  (bind ?terms (fact-slot-value ?s terms) )
+  (bind ?operations (fact-slot-value ?s operations) )
+
+  (bind ?new-terms (create$) )
+  (bind ?new-operations (create$) )
+
+  ; get string-value of terms
+  (bind ?str-v1 (f-get-string-value ?t1) )
+  (bind ?str-v2 (f-get-string-value ?t2) )
+
+  ; update side
+  (bind ?idx-v1 (member$ ?str-v1 ?terms) )
+  (bind ?new-terms (delete$ ?terms ?idx-v1 ?idx-v1) )
+
+  (bind ?idx-v2 (member$ ?str-v2 ?new-terms) )
+  (bind ?new-terms (delete$ ?new-terms ?idx-v2 ?idx-v2) )
+
+  (bind ?idx-o1 (member$ ?op1 ?operations) )
+  (bind ?new-operations (delete$ ?operations ?idx-o1 ?idx-o1) )
+  
+  (bind ?idx-o2 (member$ ?op2 ?new-operations) )
+  (bind ?new-operations (delete$ ?new-operations ?idx-o2 ?idx-o2) )
+  
+  ; remove t1 and t2
+  (retract ?t1 ?t2)
+
+  ; add result 
+  (if (neq ?result-t nil)
+    then
+    (bind ?str-res (f-get-string-value ?result-t) )
+    (bind ?new-terms (create$ ?new-terms ?str-res) ) 
+    (bind ?new-operations (create$ ?new-operations (fact-slot-value ?result-t operation) ) )
+  )
+
+  (modify ?s (terms ?new-terms) (operations ?new-operations) )
+)
+
+(deffunction f-check-end (?s1 ?s2 )
+
+  (bind ?terms1 (fact-slot-value ?s1 terms) )
+
+  (bind ?terms2 (fact-slot-value ?s2 terms) )
+
+  (if (and (= 1 (length$ ?terms1)) (= 1 (length$ ?terms2) ) )
+    then
+    (return TRUE)
+  )
+
+  (return FALSE)
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; These are rules used for equation resolution 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defrule r-transform-LHS
+ 
+ ?pb <- (problem (next-term-id ?next-id) (equation ?LHS ?RHS) (subgoals $? ?subgoal $?) )
+
+ ?subgoal <- (g-transform-LHS (field ?f) )
+
+ ?LHS <- (side (type LHS) (terms $?LHS-terms) (operations $?LHS-operations) )
+
+ ?RHS <- (side (type RHS) (terms $?RHS-terms) (operations $?RHS-operations) )
+
+ ?new-t <- (term (candidate TRUE) (type ?term-type) (operation ?op) (value-nb ?v-nb) (u-coef ?u-coef) (u-char ?u-char) )
+
+ => 
+ 
+ (retract ?subgoal)
+
+ ; get string value of candidate term
+ (bind ?str-v (f-get-string-value ?new-t) )
+
+ ; update LHS
+ (modify ?LHS (operations ?LHS-operations ?op) (terms ?LHS-terms ?str-v) )
+
+ ; make new-t LHS and not candidate
+ (modify ?new-t (candidate FALSE) (side-type LHS) )
+
+ ; duplicate new-t in RHS
+ (duplicate ?new-t (id (++ ?next-id)) (side-type RHS) (candidate FALSE) )
+
+ ; update RHS
+ (modify ?RHS (operations ?RHS-operations ?op) (terms ?RHS-terms ?str-v) )
+
+ ; check if a match with input
+ (predict-observable-action ?f UpdateTextField (getRegex ?LHS) RegexMatcher)
+
+ ; get next fields
+ (bind ?next-f1 (f-get-next-field ?pb) ) 
+ (bind ?next-f2 (f-get-next-field ?pb) ) 
+ (bind ?next-f3 (f-get-next-field ?pb) ) 
+
+ ; add subgoals 
+ (bind ?sub1 (assert(MAIN::g-remove-candidates) ) )
+
+ (bind ?sub2 (assert(MAIN::g-transform-RHS (field ?next-f1) ) ) )
+
+ ; get operation type 
+ (bind ?op-type (f-get-operation-type ?op) )
+
+ (bind ?sub3 (assert(MAIN::g-recognize-op-type (value ?op-type) (field ?next-f2) ) ) )
+
+ (bind ?sub4 (assert(MAIN::g-recognize-op-nb (number ?str-v) (field ?next-f3) ) ) )
+
+ (modify ?pb (next-term-id ?next-id) (subgoals ?sub1 ?sub2 ?sub3 ?sub4 ) )
+
+ (construct-message
+        "[ Subtract 2 from LHS. ]"
+   )
+)
+
+(defrule r-transform-RHS
+ ?pb <- (problem (equation ?LHS ?RHS) (subgoals $? ?subgoal $?) )
+
+ ?subgoal <- (g-transform-RHS (field ?f) )
+
+ ?RHS <- (side (type RHS) (terms $?RHS-terms) (operations $?RHS-operations) )
+
+ => 
+
+ (predict-observable-action ?f UpdateTextField (getRegex ?RHS) RegexMatcher)
+ (retract ?subgoal)
+)
+
+(defrule r-recognize-op-type
+ ?pb <- (problem (equation ?LHS ?RHS) (subgoals $? ?subgoal $?) )
+
+ ?subgoal <- (g-recognize-op-type (value ?v) (field ?f) )
+
+ =>
+
+ (retract ?subgoal)
+ (predict-observable-action ?f UpdateComboBox ?v)
+)
+
+(defrule r-recognize-op-nb
+ ?pb <- (problem (equation ?LHS ?RHS) (subgoals $? ?subgoal $?) )
+
+ ?subgoal <- (g-recognize-op-nb (number ?nb) (field ?f) )
+
+ =>
+
+ (retract ?subgoal)
+
+ (predict-observable-action ?f UpdateTextField ?nb)
+
+ ; get next-field 
+ (bind ?next-f (f-get-next-field ?pb) )
+
+ ; add subgoal to simplify LHS
+ (bind ?sub (assert(MAIN::g-simplify (side-type LHS) (field ?next-f) ) ) )
+
+ (printout t crlf "====== next-field: " ?next-f crlf)
+
+ (modify ?pb (subgoals ?sub) )
+)
+
+(defrule r-simplify-LHS
+  ?pb <- (problem (next-term-id ?next-id) (equation ?s1 ?s2) (subgoals $? ?subgoal $?) )
+
+  ?subgoal <- (g-simplify (side-type LHS) (field ?f) )
+
+  ?s1 <- (side (type LHS) (terms $?terms1) (operations $?operations1) )
+
+  ?s2 <- (side (type ?s-t2&:(neq ?s-t2 LHS)) (terms $?terms2) (operations $?operations2) )
+
+  ?t1 <- (term (id ?id1) (candidate FALSE) (type ?t-type) (operation ?op1) (side-type LHS) (value-nb ?v-nb1) (u-coef ?u-coef1) (u-char ?u-char1) )
+
+  ?t2 <- (term (id ?id2&:(<> ?id2 ?id1)) (candidate FALSE) (type ?t-type) (operation ?op2) (side-type LHS) (value-nb ?v-nb2) (u-coef ?u-coef2) (u-char ?u-char2) )
+
+  =>
+  
+  (retract ?subgoal)
+  
+  (bind ?result-t (f-get-result-nb ?t1 ?t2 ?next-id) )
+
+  (f-update-side ?result-t ?t1 ?t2 ?s1)
+
+  (predict-observable-action ?f UpdateTextField (getRegex ?s1) RegexMatcher)
+
+  (bind ?next-field1 (f-get-next-field ?pb) )
+  (bind ?sub1 (assert(MAIN::g-simplify (side-type RHS) (field ?next-field1) ) ) )
+  (modify ?pb (subgoals ?sub1) )
+)
+
+(defrule r-simplify-LHS-muldiv
+
+  ?pb <- (problem (next-term-id ?next-id) (equation ?s1 ?s2) (subgoals $? ?subgoal $?) )
+
+  ?subgoal <- (g-simplify (side-type LHS) (field ?f) )
+
+  (exists (g-finish))
+
+  ?s1 <- (side (type LHS) (terms $?terms1) (operations $?operations1) )
+
+  ?s2 <- (side (type RHS) (terms $?terms2) (operations $?operations2) )
+
+  ?t1 <- (term (id ?id1) (candidate FALSE) (operation ?op1) (side-type LHS) (value-nb ?v-nb1) (u-coef ?u-coef1) (u-char ?u-char1) )
+
+  ?t2 <- (term (id ?id2&:(<> ?id2 ?id1)) (candidate FALSE) (operation ?op2&:(or (eq ?op1 /) (eq ?op2 /) ) ) (side-type LHS) (value-nb ?v-nb2) (u-coef ?u-coef2) (u-char ?u-char2) )
+
+  =>
+
+  (retract ?subgoal)
+  
+  (bind ?result-t (f-get-result-nb ?t1 ?t2 ?next-id) )
+
+  (f-update-side ?result-t ?t1 ?t2 ?s1)
+
+  (predict-observable-action ?f UpdateTextField (getRegex ?s1) RegexMatcher)
+
+  (bind ?next-field1 (f-get-next-field ?pb) )
+  (bind ?sub1 (assert(MAIN::g-simplify (side-type RHS) (field ?next-field1) ) ) )
+  (modify ?pb (subgoals ?sub1) )
+)
+
+(defrule r-simplify-RHS-muldiv
+
+  ?pb <- (problem (next-term-id ?next-id) (equation ?s1 ?s2) (subgoals $? ?subgoal $?) )
+
+  ?subgoal <- (g-simplify (side-type RHS) (field ?f) )
+
+  (exists (g-finish))
+
+  ?s1 <- (side (type LHS) (terms $?terms1) (operations $?operations1) )
+
+  ?s2 <- (side (type RHS) (terms $?terms2) (operations $?operations2) )
+
+  ?t1 <- (term (id ?id1) (candidate FALSE) (operation ?op1) (side-type RHS) (value-nb ?v-nb1) (u-coef ?u-coef1) (u-char ?u-char1) )
+
+  ?t2 <- (term (id ?id2&:(<> ?id2 ?id1)) (candidate FALSE) (operation ?op2&:(or (eq ?op1 /) (eq ?op2 /) ) ) (side-type RHS) (value-nb ?v-nb2) (u-coef ?u-coef2) (u-char ?u-char2) )
+
+  =>
+
+  (retract ?subgoal)
+  
+  (bind ?result-t (f-get-result-nb ?t1 ?t2 ?next-id) )
+
+  (f-update-side ?result-t ?t1 ?t2 ?s2)
+
+  (predict-observable-action ?f UpdateTextField (getRegex ?s2) RegexMatcher)
+
+  (bind ?next-field1 (f-get-next-field ?pb) )
+  (bind ?sub3 (assert(MAIN::g-recognize-op-type (value Simplify) (field ?next-field1) ) ) )
+  (modify ?pb (subgoals ?sub3 ) )
+
+)
+
+(defrule r-simplify-RHS
+  ?pb <- (problem (next-term-id ?next-id) (equation ?s1 ?s2) (subgoals $? ?subgoal $?) )
+
+  ?subgoal <- (g-simplify (side-type RHS) (field ?f) )
+
+  ?s2 <- (side (type RHS) (terms $?terms1) (operations $?operations1) )
+
+  ?s1 <- (side (type LHS) (terms $?terms2) (operations $?operations2) )
+
+  ?t1 <- (term (id ?id1) (candidate FALSE) (type ?t-type) (operation ?op1) (side-type RHS) (value-nb ?v-nb1) (u-coef ?u-coef1) (u-char ?u-char1) )
+
+  ?t2 <- (term (id ?id2&:(<> ?id2 ?id1)) (candidate FALSE) (type ?t-type) (operation ?op2) (side-type RHS) (value-nb ?v-nb2) (u-coef ?u-coef2) (u-char ?u-char2) )
+
+  =>
+  
+  (retract ?subgoal)
+
+  (bind ?result-t (f-get-result-nb ?t1 ?t2 ?next-id) )
+
+  (f-update-side ?result-t ?t1 ?t2 ?s2)
+
+  (predict-observable-action ?f UpdateTextField (getRegex ?s2) RegexMatcher)
+  
+  (bind ?next-field1 (f-get-next-field ?pb) )
+
+  (bind ?sub3 (assert(MAIN::g-recognize-op-type (value Simplify) (field ?next-field1) ) ) )
+
+  (bind ?next-field2 (f-get-next-field ?pb) ) ; for nb-value
+  (bind ?next-field3 (f-get-next-field ?pb) ) 
+  (if (eq (f-check-end ?s1 ?s2) TRUE)
+    then (bind ?sub1 (assert(MAIN::g-last-step (field ?next-field3) ) ) )
+   else (bind ?sub1 (assert(MAIN::g-create-candidates) ) )
+  )
+  (bind ?sub2 (assert(MAIN::g-transform-LHS (field ?next-field3) ) ) )
+  
+  (modify ?pb (subgoals ?sub1 ?sub2 ?sub3) )
+)
+
+(defrule r-remove-candidates
+ (declare (salience 300))
+ ?pb <- (problem (subgoals $? ?sub $?) )
+ ?sub <- (g-remove-candidates)
+ ?term <- (term (candidate TRUE) )
+
+ =>
+ (retract ?term)
+)
+
+(defrule r-create-candidates
+ (declare (salience 300))
+ ?pb <- (problem (subgoals $? ?sub $?) (next-term-id ?next-id) )
+ ?sub <- (g-create-candidates)
+ ?t1 <- (term (id ?id1) (side-type ?s-type1) (operation ?op1) (type ?type) (candidate FALSE) )
+ ?t2 <- (term (id ?id2&:(<> ?id1 ?id2) )  (side-type ?s-type2&:(<> ?s-type1 ?s-type2) ) (operation ?op2) (type ?type) (candidate FALSE) )
+
+ =>
+
+ (retract ?sub)
+
+ (bind ?new-op1 (f-get-opposite-operation ?op1) )
+
+ (duplicate ?t1 (id (++ ?next-id) ) (candidate TRUE) (side-type nil) (operation ?new-op1) )
+
+ (bind ?new-op2 (f-get-opposite-operation ?op2) )
+ (duplicate ?t2 (id (++ ?next-id) ) (candidate TRUE) (side-type nil) (operation ?new-op2) )
+
+ (modify ?pb (next-term-id ?next-id) )
+)
+
+(defrule r-last-step
+  ?pb <- (problem (subgoals $? ?sub $?) (next-term-id ?next-id) )
+  ?sub <- (g-last-step (field ?f) )
+  ?unknown <- (term (candidate FALSE) (type Unknown) (u-coef ?u-coef) (operation ?op) )
+  
+  =>
+
+  (retract ?sub)
+
+  (if (eq ?op -)
+   then
+   (bind ?nb (* -1 ?u-coef))
+   else
+   (bind ?nb ?u-coef)
+  )
+
+  (assert(MAIN::term (id (++ ?next-id)) (type Number) (candidate TRUE) (operation /) (value-nb ?nb) ) )
+
+  (modify ?pb (next-term-id ?next-id))
+
+  (bind ?new-subgoal (assert(MAIN::g-finish ) ) )
+
+  (modify ?pb (subgoals (fact-slot-value ?pb subgoals) ?new-subgoal) )
+)
+
+(defrule r-finish-unknown
+  ?final-unknown <- (term (type Unknown) (candidate FALSE) (u-coef 1) (u-char ?u-char) )
+  
+  => 
+
+  (predict-observable-action final-unknown UpdateTextField ?u-char)
+
+)
+
+(defrule r-finish-number
+  ?pb <- (problem (equation $? ?s $? ) )
+  ?s <- (side (type ?s-t) )
+  ?final-result <-  (term (side-type ?s-t) (type Number) (candidate FALSE) )
+  
+  => 
+
+  (bind ?str-v (f-get-string-value ?final-result) )
+
+  (predict-observable-action final-result UpdateTextField (getRegex ?s) RegexMatcher)
+
+  (bind ?sub (assert(MAIN::g-finish-done) ) )
+  (modify ?pb (subgoals ?sub))
+)
+
+(defrule r-finish-done
+  ?pb <- (problem (subgoals $? ?sub $?) (next-term-id ?next-id) )
+  ?sub <- (g-finish-done)
+  
+  => 
+
+  (predict-observable-action done ButtonPressed -1)
+)
+
+

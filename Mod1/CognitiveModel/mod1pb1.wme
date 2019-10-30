@@ -1,0 +1,14 @@
+;; for Eclipse, etc., specify templates to read
+(require* wmeTypes "wmeTypes.clp")
+
+;;;; Fact assertions: slot assignments are below.
+
+(bind ?var1 (assert(MAIN::hint)))
+(bind ?var2 (assert(MAIN::problem (name xmul5eq60))))
+
+;;;; Slot assignments
+
+; MAIN::hint
+(modify ?var1
+    (now FALSE)
+)

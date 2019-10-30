@@ -1,0 +1,51 @@
+;; for Eclipse, etc., specify templates to read
+(require* wmeTypes "wmeTypes.clp")
+
+;;;; Fact assertions for equation: 5x+2 = x+10
+
+;; Components of the LHS of the equation: 5x+2
+
+; Add 5x as a term: +5x (plus is implicit in original equation)
+(bind ?t1-LHS (assert(MAIN::term (id 1) (candidate FALSE) (type Unknown) (operation +) (side-type LHS) (u-coef 5) (u-char x) ) ) )
+
+; Adding 2 as a term: +2
+(bind ?t2-LHS (assert(MAIN::term (id 2) (side-type LHS) (type Number) (candidate FALSE) (operation +) (value-nb 2) ) ) )
+
+; Creating the side LHS as a fact: 5x+2
+(bind ?side-LHS (assert(MAIN::side (type LHS) (terms "5x" "2") (operations (create$ + +) ) ) ) )
+
+; Components of the RHS of the equation: x+10
+
+; Adding 4x as a term: +x (plus is implicit in original equation)
+(bind ?t1-RHS (assert(MAIN::term (id 3) (side-type RHS) (type Unknown) (candidate FALSE) (operation +) (u-coef 1) (u-char x) ) ) )
+
+; Adding 6 as a term: +10
+(bind ?t2-RHS (assert(MAIN::term (id 4) (side-type RHS) (type Number) (candidate FALSE) (operation +) (value-nb 10) ) ) )
+
+; Creating the side LHS as a fact: x+10
+(bind ?side-RHS (assert(MAIN::side (type RHS) (terms "x" "10") (operations (create$ + +) ) ) ) )
+
+; Define candidate terms for first transform operation
+(bind ?t1 (assert(MAIN::term (id 8) (type Number) (candidate TRUE) (operation -) (value-nb 2) ) ) )
+
+(bind ?t2 (assert(MAIN::term (id 5) (type Unknown) (candidate TRUE) (operation -) (u-coef 5) (u-char x) ) ) )
+
+(bind ?t3 (assert(MAIN::term (id 6) (type Number) (candidate TRUE) (operation -) (value-nb -10) ) ) )
+
+(bind ?t4 (assert(MAIN::term (id 7) (type Unknown) (candidate TRUE) (operation -) (u-coef 1) (u-char x) ) ) )
+
+; MAIN::problem
+(bind ?sub (assert(MAIN::g-transform-LHS (field s1-LHS) ) ) )
+
+(bind ?problem 
+	(assert(MAIN::problem 
+		(next-term-id 8) 
+		(name Mod2Pb9) 
+		(equation ?side-LHS ?side-RHS) 
+		(subgoals ?sub) 
+		(interface-elements (create$ s1-RHS s1-operation s1-nb-value s2-LHS s2-RHS s2-operation s2-nb-value s3-LHS s3-RHS s3-operation s3-nb-value s4-LHS s4-RHS s4-operation s4-nb-value s5-LHS s5-RHS s5-operation s5-nb-value s6-LHS s6-RHS s6-operation s6-nb-value ) ) ) 
+	) 
+)
+
+;; CTAT default components
+(bind ?hint (assert(MAIN::hint (now FALSE) ) ) )

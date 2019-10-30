@@ -1,0 +1,35 @@
+;; for Eclipse, etc., specify templates to read
+(require* wmeTypes "wmeTypes.clp")
+
+;;;; Fact assertions: slot assignments are below.
+
+(bind ?var1 (assert(MAIN::var (id 1) (coef 1) (char x) (op +) (offset 0) ) ) )
+(bind ?var2 (assert(MAIN::var (id 2) (coef 1) (char x) (op +) (offset 1) ) ) )
+(bind ?var3 (assert(MAIN::var (id 3) (coef 1) (char x) (op +) (offset 2) ) ) )
+(bind ?var4 (assert(MAIN::var (id 4) (coef 0) (op +) (offset 30) ) ) )
+
+(bind ?sub1 (assert(MAIN::g-get-init-vars) ) )
+
+(bind ?LHS (assert(MAIN::side (type LHS) ) ) )
+(bind ?RHS (assert(MAIN::side (type RHS) ) ) )
+
+(bind ?interface-elts (create$ ) )
+
+(bind ?hint (assert(MAIN::hint)))
+(bind ?pb (assert(MAIN::problem (name mod3pb1))))
+
+;;;; Slot assignments
+
+; MAIN::hint
+(modify ?hint
+    (now FALSE)
+)
+; MAIN::problem
+(modify ?pb
+    (name mod3pb1)
+    (interface-elements s1-v1-value s1-v2-value s1-v3-value s2-LHS s2-RHS s2-simplified-LHS s2-simplified-RHS  s3-step2-LHS s3-step2-RHS s3-step3-LHS s3-step3-RHS s4-v1-value s4-v2-value s4-v3-value s5-v1 s5-v2 s5-v3 s5-final-result done)
+    (equation ?LHS ?RHS)
+    (subgoals ?sub1)
+    (done nil)
+    (description nil)
+)
